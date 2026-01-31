@@ -1,0 +1,1 @@
+.Buy__container{display:grid;font-size:1rem;grid-template:"siteHeader" auto "siteContent" minmax(60vh,1fr);line-height:1.5rem;min-height:100vh}.Buy__siteHeader{grid-area:siteHeader}.Buy__siteContent{grid-area:siteContent;width:100vw}@media(min-width:768px){.Buy__siteContent{width:auto}}.grecaptcha-badge{display:none}

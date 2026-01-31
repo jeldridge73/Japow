@@ -1,0 +1,1 @@
+.TeamMemberCard__bioTransition{overflow:hidden;transition-duration:.25s;transition-property:max-height,opacity;transition-timing-function:ease-in-out}.TeamMemberCard__bioVisible{max-height:400px;opacity:1}.TeamMemberCard__bioHidden{max-height:0;opacity:0}
