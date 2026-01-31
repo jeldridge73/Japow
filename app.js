@@ -243,7 +243,7 @@ const resorts = [
 ];
 
 // API Configuration
-const API_KEY = 'YOUR_OPENWEATHERMAP_API_KEY'; // Replace with your API key
+const API_KEY = '74751d897177d8673c9121a45303d5e9'; // Replace with your API key
 const API_BASE_URL = 'https://api.openweathermap.org/data/2.5';
 
 // State
