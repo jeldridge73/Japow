@@ -242,9 +242,8 @@ const resorts = [
     }
 ];
 
-// API Configuration
-const API_KEY = '74751d897177d8673c9121a45303d5e9'; // Replace with your API key
-const API_BASE_URL = 'https://api.openweathermap.org/data/2.5';
+// API Configuration - Open-Meteo (free, no API key required)
+const API_BASE_URL = 'https://api.open-meteo.com/v1';
 
 // State
 let resortData = [];
@@ -316,42 +315,41 @@ async function loadWeatherData() {
 }
 
 async function fetchResortWeather(resort) {
-    // Check if API key is set
-    if (API_KEY === 'YOUR_OPENWEATHERMAP_API_KEY') {
-        // Return mock data for demo purposes (in inches)
-        return {
-            ...resort,
-            temp: (Math.random() * -15 - 5) * 9/5 + 32, // Convert to Fahrenheit
-            snow24h: (Math.random() * 40) / 2.54, // Convert cm to inches
-            snow48h: (Math.random() * 80) / 2.54,
-            snow7day: (Math.random() * 200) / 2.54,
-            conditions: ['Light Snow', 'Moderate Snow', 'Heavy Snow', 'Cloudy'][Math.floor(Math.random() * 4)],
-            windSpeed: (Math.random() * 20 + 5) * 2.237 // Convert m/s to mph
-        };
-    }
-
     try {
-        // Current weather
-        const currentUrl = `${API_BASE_URL}/weather?lat=${resort.lat}&lon=${resort.lon}&appid=${API_KEY}&units=metric`;
-        const currentResponse = await fetch(currentUrl);
-        const currentData = await currentResponse.json();
-
-        // 5-day forecast for accumulation estimates
-        const forecastUrl = `${API_BASE_URL}/forecast?lat=${resort.lat}&lon=${resort.lon}&appid=${API_KEY}&units=metric`;
-        const forecastResponse = await fetch(forecastUrl);
-        const forecastData = await forecastResponse.json();
-
-        // Calculate snowfall estimates
-        const snowfall = calculateSnowfall(forecastData);
-
+        const currentDate = new Date();
+        const endDate = currentDate.toISOString().split('T')[0];
+        const startDate = new Date(currentDate - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        
+        // Current weather and historical snowfall data
+        const weatherUrl = `${API_BASE_URL}/forecast?latitude=${resort.lat}&longitude=${resort.lon}&current=temperature_2m,weather_code,wind_speed_10m&daily=snowfall_sum&start_date=${startDate}&end_date=${endDate}&timezone=Asia/Tokyo`;
+        
+        const response = await fetch(weatherUrl);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // Calculate snowfall totals from daily data (in cm, convert to inches)
+        const dailySnowfall = data.daily?.snowfall_sum || [];
+        const recentDays = dailySnowfall.slice(-7); // Last 7 days
+        
+        const snow24h = (recentDays[recentDays.length - 1] || 0) / 2.54;
+        const snow48h = (recentDays.slice(-2).reduce((a, b) => a + b, 0)) / 2.54;
+        const snow7day = (recentDays.reduce((a, b) => a + b, 0)) / 2.54;
+        
+        // Map weather codes to descriptions
+        const weatherCode = data.current?.weather_code || 0;
+        const conditions = getWeatherDescription(weatherCode);
+        
         return {
             ...resort,
-            temp: currentData.main.temp * 9/5 + 32, // Convert to Fahrenheit
-            conditions: currentData.weather[0].description,
-            windSpeed: currentData.wind.speed * 2.237, // Convert m/s to mph
-            snow24h: snowfall.day1 / 2.54, // Convert mm to inches
-            snow48h: snowfall.day2 / 2.54,
-            snow7day: snowfall.week / 2.54
+            temp: (data.current?.temperature_2m || 0) * 9/5 + 32, // Convert to Fahrenheit
+            conditions: conditions,
+            windSpeed: (data.current?.wind_speed_10m || 0) * 2.237, // Convert km/h to mph
+            snow24h: Math.max(0, snow24h),
+            snow48h: Math.max(0, snow48h),
+            snow7day: Math.max(0, snow7day)
         };
     } catch (error) {
         console.error(`Error fetching data for ${resort.name}:`, error);
@@ -367,37 +365,40 @@ async function fetchResortWeather(resort) {
     }
 }
 
-function calculateSnowfall(forecastData) {
-    const now = Date.now();
-    let day1 = 0, day2 = 0, week = 0;
-
-    forecastData.list.forEach(item => {
-        const itemTime = item.dt * 1000;
-        const hoursSince = (itemTime - now) / (1000 * 60 * 60);
-
-        // Estimate snowfall from precipitation when temp is below freezing
-        if (item.main.temp < 0 && item.rain) {
-            const snowEstimate = (item.rain['3h'] || 0) * 10; // Rough conversion: 1mm rain = ~10mm snow
-
-            if (hoursSince >= -24 && hoursSince <= 0) day1 += snowEstimate;
-            if (hoursSince >= -48 && hoursSince <= 0) day2 += snowEstimate;
-            if (hoursSince >= -168 && hoursSince <= 0) week += snowEstimate;
-        }
-
-        if (item.main.temp < 0 && item.snow) {
-            const snowAmount = item.snow['3h'] || 0;
-
-            if (hoursSince >= -24 && hoursSince <= 0) day1 += snowAmount;
-            if (hoursSince >= -48 && hoursSince <= 0) day2 += snowAmount;
-            if (hoursSince >= -168 && hoursSince <= 0) week += snowAmount;
-        }
-    });
-
-    return {
-        day1: Math.round(day1),
-        day2: Math.round(day2),
-        week: Math.round(week)
+function getWeatherDescription(weatherCode) {
+    // Open-Meteo weather codes mapping
+    const weatherCodes = {
+        0: 'Clear sky',
+        1: 'Mainly clear',
+        2: 'Partly cloudy',
+        3: 'Overcast',
+        45: 'Fog',
+        48: 'Depositing rime fog',
+        51: 'Light drizzle',
+        53: 'Moderate drizzle',
+        55: 'Dense drizzle',
+        56: 'Light freezing drizzle',
+        57: 'Dense freezing drizzle',
+        61: 'Slight rain',
+        63: 'Moderate rain',
+        65: 'Heavy rain',
+        66: 'Light freezing rain',
+        67: 'Heavy freezing rain',
+        71: 'Slight snow',
+        73: 'Moderate snow',
+        75: 'Heavy snow',
+        77: 'Snow grains',
+        80: 'Slight rain showers',
+        81: 'Moderate rain showers',
+        82: 'Violent rain showers',
+        85: 'Slight snow showers',
+        86: 'Heavy snow showers',
+        95: 'Thunderstorm',
+        96: 'Thunderstorm with slight hail',
+        99: 'Thunderstorm with heavy hail'
     };
+    
+    return weatherCodes[weatherCode] || 'Unknown conditions';
 }
 
 function renderResortList() {
